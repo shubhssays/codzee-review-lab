@@ -17,38 +17,34 @@ export const CreateJobSchema = z.strictObject({
 
 export type CreateJobSchemaInput = z.infer<typeof CreateJobSchema>;
 
+const toOptionalInteger = (val: unknown): unknown => {
+  if (val === undefined) return undefined;
+  if (typeof val === 'number') return Number.isSafeInteger(val) ? val : NaN;
+  if (typeof val === 'string' && /^-?\d+$/.test(val.trim())) {
+    const num = Number(val.trim());
+    return Number.isSafeInteger(num) ? num : NaN;
+  }
+  return NaN;
+};
+
 export const JobPaginationQuerySchema = z.object({
-  limit: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((val) => {
-      if (val === undefined) return undefined;
-      const num = typeof val === 'number' ? val : Number(val);
-      return isNaN(num) ? NaN : num;
-    })
-    .pipe(
-      z
-        .number({ message: 'limit must be a number' })
-        .int('limit must be an integer')
-        .positive('limit must be greater than 0')
-        .max(100, 'limit cannot exceed 100')
-        .optional()
-    ),
-  offset: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((val) => {
-      if (val === undefined) return undefined;
-      const num = typeof val === 'number' ? val : Number(val);
-      return isNaN(num) ? NaN : num;
-    })
-    .pipe(
-      z
-        .number({ message: 'offset must be a number' })
-        .int('offset must be an integer')
-        .min(0, 'offset must be greater than or equal to 0')
-        .optional()
-    ),
+  limit: z.preprocess(
+    toOptionalInteger,
+    z
+      .number({ message: 'limit must be a number' })
+      .int('limit must be an integer')
+      .min(1, 'limit must be greater than 0')
+      .max(100, 'limit cannot exceed 100')
+      .optional()
+  ),
+  offset: z.preprocess(
+    toOptionalInteger,
+    z
+      .number({ message: 'offset must be a number' })
+      .int('offset must be an integer')
+      .min(0, 'offset must be greater than or equal to 0')
+      .optional()
+  ),
 });
 
 export type JobPaginationQueryInput = z.infer<typeof JobPaginationQuerySchema>;

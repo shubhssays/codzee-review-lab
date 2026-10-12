@@ -246,12 +246,110 @@ describe('Fastify HTTP Endpoints with Injection API', () => {
         });
         expect(invalidTypeResponse.statusCode).toBe(400);
 
+        const emptyStringResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '' },
+        });
+        expect(emptyStringResponse.statusCode).toBe(400);
+
+        const whitespaceStringResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '   ' },
+        });
+        expect(whitespaceStringResponse.statusCode).toBe(400);
+
+        const decimalLimitResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '10.5' },
+        });
+        expect(decimalLimitResponse.statusCode).toBe(400);
+
+        const exceedsMaxLimitResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '101' },
+        });
+        expect(exceedsMaxLimitResponse.statusCode).toBe(400);
+
         const negativeOffsetResponse = await app.inject({
           method: 'GET',
           url: '/jobs',
           query: { offset: '-1' },
         });
         expect(negativeOffsetResponse.statusCode).toBe(400);
+
+        const decimalOffsetResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { offset: '3.14' },
+        });
+        expect(decimalOffsetResponse.statusCode).toBe(400);
+
+        const invalidOffsetStringResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { offset: 'abc' },
+        });
+        expect(invalidOffsetStringResponse.statusCode).toBe(400);
+      });
+
+      it('should return 400 Bad Request for an excessively large offset exceeding safe integer range', async () => {
+        const largeOffsetResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { offset: '99999999999999999999999999999999' },
+        });
+        expect(largeOffsetResponse.statusCode).toBe(400);
+        expect(largeOffsetResponse.json().error).toBe('Bad Request');
+      });
+
+      it('should accept valid boundary values for limit and offset', async () => {
+        // Min boundary: limit=1, offset=0
+        const minBoundaryResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '1', offset: '0' },
+        });
+        expect(minBoundaryResponse.statusCode).toBe(200);
+        const minData = minBoundaryResponse.json();
+        expect(minData.limit).toBe(1);
+        expect(minData.offset).toBe(0);
+
+        // Max boundary: limit=100
+        const maxBoundaryResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '100' },
+        });
+        expect(maxBoundaryResponse.statusCode).toBe(200);
+        const maxData = maxBoundaryResponse.json();
+        expect(maxData.limit).toBe(100);
+        expect(maxData.offset).toBe(0); // default offset applied when omitted
+      });
+
+      it('should apply defaults when individual pagination parameters are omitted', async () => {
+        // Only limit provided, offset omitted
+        const limitOnlyResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { limit: '5' },
+        });
+        expect(limitOnlyResponse.statusCode).toBe(200);
+        expect(limitOnlyResponse.json().limit).toBe(5);
+        expect(limitOnlyResponse.json().offset).toBe(0);
+
+        // Only offset provided, limit omitted
+        const offsetOnlyResponse = await app.inject({
+          method: 'GET',
+          url: '/jobs',
+          query: { offset: '2' },
+        });
+        expect(offsetOnlyResponse.statusCode).toBe(200);
+        expect(offsetOnlyResponse.json().limit).toBe(20);
+        expect(offsetOnlyResponse.json().offset).toBe(2);
       });
     });
 
