@@ -1,5 +1,8 @@
 import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
 import { z } from 'zod';
+import { JobService } from './services/job-service.js';
+import { IJobRepository, InMemoryJobRepository } from './repositories/job-repository.js';
+import { CreateJobSchema, JobPaginationQuerySchema } from './schemas/job-schema.js';
 
 export interface CodeReview {
   id: string;
@@ -23,10 +26,19 @@ const CreateReviewSchema = z.object({
   comments: z.string().optional(),
 });
 
-export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
-  const app = Fastify(opts);
+export interface AppOptions extends FastifyServerOptions {
+  jobService?: JobService;
+  jobRepository?: IJobRepository;
+}
 
-  // In-memory store for demonstration
+export function buildApp(opts: AppOptions = {}): FastifyInstance {
+  const { jobService: customJobService, jobRepository: customJobRepo, ...fastifyOpts } = opts;
+  const app = Fastify(fastifyOpts);
+
+  const jobRepository = customJobRepo ?? new InMemoryJobRepository();
+  const jobService = customJobService ?? new JobService(jobRepository);
+
+  // In-memory store for demonstration reviews
   const reviews: Map<string, CodeReview> = new Map([
     [
       'rev-1',
@@ -65,6 +77,58 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
       timestamp: new Date().toISOString(),
     };
   });
+
+  // ==================== Job Endpoints ====================
+
+  // POST /jobs - Create a new job
+  app.post('/jobs', async (request, reply) => {
+    const parseResult = CreateJobSchema.safeParse(request.body);
+
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Invalid job payload',
+        details: parseResult.error.issues,
+      });
+    }
+
+    const createdJob = await jobService.createJob(parseResult.data);
+    return reply.status(201).send(createdJob);
+  });
+
+  // GET /jobs/:id - Get a single job by ID
+  app.get<{ Params: { id: string } }>('/jobs/:id', async (request, reply) => {
+    const { id } = request.params;
+    const job = await jobService.getJobById(id);
+
+    if (!job) {
+      return reply.status(404).send({
+        error: 'Not Found',
+        message: `Job with ID '${id}' was not found.`,
+      });
+    }
+
+    return reply.status(200).send(job);
+  });
+
+  // GET /jobs - List jobs with limit & offset pagination
+  app.get('/jobs', async (request, reply) => {
+    const parseResult = JobPaginationQuerySchema.safeParse(request.query);
+
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Invalid pagination query parameters',
+        details: parseResult.error.issues,
+      });
+    }
+
+    const { limit, offset } = parseResult.data;
+    const result = await jobService.listJobs({ limit, offset });
+    return reply.status(200).send(result);
+  });
+
+  // ==================== Review Endpoints ====================
 
   // Get all reviews (with optional author query filter)
   app.get<{ Querystring: { author?: string; status?: string } }>(
